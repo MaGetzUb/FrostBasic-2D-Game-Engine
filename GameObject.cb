@@ -1,8 +1,8 @@
 
 
 
-Include "../AdvancedMaths.cb"
-Include "../RGBA.cb"
+Include "AdvancedMaths.cb"
+Include "RGBA.cb"
 Include "Camera.cb"
 Include "TilemapFunctions.cb"
 

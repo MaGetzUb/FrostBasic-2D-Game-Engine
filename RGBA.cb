@@ -1,0 +1,81 @@
+
+Struct RGBA
+	Field r As Float
+	Field g As Float
+	Field b As Float 
+	Field a As Float 
+End Struct 
+
+Function Lerp(a As RGBA, b As RGBA, amt As Float) As RGBA
+	col As RGBA
+	col = Add(a, Mul(Sub(b, a), amt))
+	Return col
+EndFunction 
+
+Function InitRGBA(r As Float, g As Float, b As Float, a As Float) As RGBA
+	col As RGBA
+	col.r = r
+	col.g = g
+	col.b = b
+	col.a = a
+	Return col
+EndFunction 
+
+Function InitRGBA(r As Integer, g As Integer, b As Integer, a As Integer) As RGBA
+	col As RGBA
+	col.r = Float(r)/255.0
+	col.g = Float(g)/255.0
+	col.b = Float(b)/255.0
+	col.a = Float(a)/255.0
+	Return col
+EndFunction 
+
+Function Print(col As RGBA)
+	Print col.r+", "+col.g+", "+col.b+", "+col.a
+EndFUnction 
+
+Function InitRGBA(pix As Integer) As RGBA
+	Return InitRGBA(Float(pix Shr 24) / 255.0, float((pix Shl 8) Shr 24) / 255.0, float((pix Shl 16) Shr 24) / 255.0, float((pix Shl 24) Shr 24) / 255.0)
+EndFunction 
+
+Function RGBAToPix(col As RGBA) As Integer
+	Return int(col.r*255) + int(col.g*255) shl 8 + int(col.b*255) shl 16 + int(col.a*255) shl 24
+EndFunction 
+
+Function RGBAToVec4(col As RGBA) As Vector4 
+	Return Vec4(col.r, col.g, col.b, col.a)
+Endfunction 
+
+Function Mul(a As RGBA, v As Float) As RGBA
+	Return InitRGBA(a.r*v, a.g*v, a.b*v, a.a*v)
+EndFunction 
+
+Function Mul(a As RGBA, b As RGBA) As RGBA
+	Return InitRGBA(a.r*b.r, a.g*b.g, a.b*b.b, a.a*b.a)
+EndFunction 
+
+Function Div(ca As RGBA, cb As Float) As RGBA
+	Return InitRGBA(ca.r/cb, ca.g/cb, ca.b/cb, ca.a/cb)
+EndFunction 
+
+Function Add(ca As RGBA, cb As RGBA) As RGBA
+	Return InitRGBA(ca.r + cb.r, ca.g + cb.g, ca.b + cb.b, ca.a + cb.a)
+EndFunction 
+
+Function Clamp(col As RGBA) As RGBA
+	out As RGBA
+	out.r = Max(0.0, Min(col.r, 1.0))
+	out.g = Max(0.0, Min(col.g, 1.0))
+	out.b = Max(0.0, Min(col.b, 1.0))
+	out.a = Max(0.0, Min(col.a, 1.0))
+	return out 
+EndFunction 
+
+
+Function Sub(ca As RGBA, cb As RGBA) As RGBA
+	Return InitRGBA(ca.r - cb.r, ca.g - cb.g, ca.b - cb.b, ca.a - cb.a)
+EndFunction 
+
+Function Color(col As RGBA)
+	Color col.r * 255.0, col.g * 255.0, col.b * 255.0, col.a * 255.0
+EndFunction 
