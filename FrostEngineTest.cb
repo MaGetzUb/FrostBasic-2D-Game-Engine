@@ -3,7 +3,7 @@ Include "GameObject.cb"
 Print "Screen resizion.."
 Screen 800, 600
 
-grass As Image = LoadImage("Media\Grass.bmp")
+grass As Image = LoadImage("Media\Grass.png")
 
 
 floor As GameObject = MakeObjectFloor()
@@ -28,7 +28,7 @@ Print map.mMapData.mAnimLength[16]
 
 PaintObject map, tileset
 
-img As Image = LoadImage("Media\Soldier.bmp")
+img As Image = LoadImage("Media\Soldier.png")
 MaskImage img, 0, 0, 0
 
 
