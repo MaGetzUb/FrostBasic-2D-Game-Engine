@@ -1,0 +1,117 @@
+
+Const SW As Integer =  800
+Const SH As Integer = 600
+Include "GameObject.cb"
+Screen SW, SH 
+
+Const PATH As String = "C:\Ohjelmointi\CoolBasic\"
+
+map As GameObject = LoadMap("Media/cdm2.til")
+Print (map = NULL)
+
+
+//tileset As Image = LoadImage("Media/tileset.png")
+//PaintObject map, tileset
+
+playerPos As Vector2 = Vec2(0, 0)
+playerRot As Float = 0.0
+
+fov As Float = 60
+fovStep As Float = Float(fov) / Float(SW)
+
+mapSizeSq As Float = ObjectSizeX(map) * ObjectSizeY(map)
+
+oneOverWidth As Float = 1.0 / (SW / 2) 
+
+tile As Integer = 0
+Repeat 
+
+	If UpKey() Then playerPos = Add(playerPos, Rotate(Vec2(2, 0), playerRot))
+	If DownKey() Then playerPos = Sub(playerPos, Rotate(Vec2(2, 0), playerRot))
+	If RightKey() Then playerRot = WrapAngle(playerRot + 3)
+	If LeftKey() Then playerRot = WrapAngle(playerRot - 3)
+	
+	
+	If KeyHit(16) Then fov = fov - 5 : fovStep As Float = Float(fov) / Float(SW)
+	If KeyHit(17) Then fov = fov + 5 : fovStep As Float = Float(fov) / Float(SW)
+	
+	If fov < 10 Then fov = 10
+	If fov > 360 Then fov = 360
+	
+	PushColor
+	
+	//Suoritetaan joka näytön pystyriville raycasti
+	For i = 0 To SW-1
+		//Lasketaan raycastin kulmaoffsetti
+		ang As Float = playerRot - fov / 2 + fovStep*i
+		//Lasketaan pelaajan näköportin silmän offsett
+		playerEye As Vector2 = Add(playerPos, Rotate(Vec2(0, -1+oneOverWidth*i), playerRot))
+		//Suoritetaan raycastasu
+		//dir As Vector2 = Add(Vec2(sin(playerRot),-cos(playerrot)), Mul(Vec2(sin(playerrot+90)-cos(playerrot+90), (i-SW/2)))
+		dir As Vector2 = Vec2(Cos(ang), Sin(ang))
+		rdata As RayCastData = MapCastRay(map, playerEye, Add(playerEye, Add(playerEye, Mul(dir, mapSizeSq))))
+		
+		//Jos raycastaus oli onnistunut
+		If rdata.mSuccess Then 
+			//Lasketaan pelaajan etäisyys seinään
+			dist As Float = Length(Sub(rdata.mPickPoint, playerPos))
+			//Korrektoidaan etäisyys tilen leveyden mukaan
+			distcorrected As Float = dist / 32.0
+			//Asetetaan syvyyde mukaan piirtoväri
+			Color 255.0/distcorrected, 255.0/ distcorrected, 255.0/distcorrected
+			//Piirretään vaakasuora viiva
+			Line i, SH/2 - (SH / 2) / distcorrected, i, SH/2 + (SH / 2) / distcorrected
+			
+			tile = GetMap(map, 0,  rdata.mPickPoint.x + Cos(playerRot) * 3,  rdata.mPickPoint.y + Sin(playerRot) * 3)
+		
+			//Tämä on teksturointia varten
+			//offsetX As Float = 0
+			//tx As Float = TileToWorldX(map, WorldToTileX(map, rdata.mPickPoint.x))
+			//ty As Float = TileToWorldY(map, WorldToTileY(map, rdata.mPickPoint.y))
+			//If rdata.mPickPoint.x =< tx Or rdata.mPickPoint.x => tx+TileWidth(map) Then 
+			//	offsetX = Abs(rdata.mPickPoint.y - ty)
+			//ElseIf rdata.mPickPoint.y =< ty Or rdata.mPickPoint.y => ty+TileHeight(map) Then 
+			//	offsetX = Abs(rdata.mPickPoint.x - tx)
+			//EndIf 
+			//DrawImageBox tileset, Float(i), Float(SH/2), Float(tileX + offsetX), Float(tileY), Float(1), Float(32)  
+			//DrawTileSlice map, Float(i), SH/2 - (SH / 2) / tanfov, tile, offsetX, tanfov, SH / tanfov 
+		EndIf 
+	Next i
+	PopColor
+	
+	
+	
+	PushColor
+	Color 255, 0, 0
+
+	PopColor
+	Text 0, 0, "Move with arrow keys."
+	Text 0, 12, "Adjust FOV with Q/W"
+	Text 0, 24, "FOV: "+fov
+	Text 0, 36, "FPS: "+ FPS()
+	Wait 15
+DrawScreen
+Forever 
+
+//Teksturointia varten
+//Function DrawTileSlice(map As GameObject, x As Float, y As Float, tile As Integer, offsetX As Float, z As Float, height As Float)
+//	
+//	imgh As Integer = ImageHeight(map.mTexture)
+//	
+//	framesPerRow As Integer = ImageWidth(map.mTexture) / map.mMapData.mTileWidth
+//	framesPerCol As Integer = ImageWidth(map.mTexture) / map.mMapData.mTileHeight
+//	
+//	tileSrcX As Integer = (tile Mod framesPerRow) * map.mMapData.mTileWidth
+//	tileSrcY As Integer = (tile / framesPerRow)  * map.mMapData.mTileHeight
+//	
+//	hstep As Float =  TileHeight(map)/height
+//	
+//	For i = 0 To RoundDown(height)
+//		//PutPixel x, y+i, GetPixel(map.mTexture, tileX+offsetX, tileY+i*hstep)
+//		DrawImageBox map.mTexture, x, y+i, tileSrcX+offsetX, tileSrcY+i*hstep, 1, 1 
+//	Next i
+//	
+//EndFunction 
+
+
+

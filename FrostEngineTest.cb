@@ -1,0 +1,183 @@
+Include "GameObject.cb"
+
+Print "Screen resizion.."
+Screen 800, 600
+
+grass As Image = LoadImage("Media\Grass.bmp")
+
+
+floor As GameObject = MakeObjectFloor()
+PaintObject floor, grass
+
+tileset As Image = LoadImage("Media\tileset.png")
+
+
+map As GameObject = LoadMap("Media\cdm2.til")
+ObjectPickable map, ON 
+
+//map2 As GameObject = LoadMap(PATH+"Media\testmap.til")
+//oldW As Integer = MapWidth(map)
+//oldH As Integer = MapHeight(map)
+
+//PositionObject map2, ObjectSizeX(map) / 2 + ObjectSizeX(map2) / 2, 0
+
+
+//PositionObject map2, ObjectSizeX(map) / 2 + ObjectSizeX(map2) / 2, 0
+
+Print map.mMapData.mAnimLength[16]
+
+PaintObject map, tileset
+
+img As Image = LoadImage("Media\Soldier.bmp")
+MaskImage img, 0, 0, 0
+
+
+guyobj As GameObject = MakeObject()
+guyobj.mFriction = 0.25
+PaintObject guyobj, img
+
+
+enemy As GameObject = CloneObject(guyObj)
+PositionObject enemy, 32, 150
+ObjectPickable enemy, 2
+
+Print guyobj.mHotSpot
+//For i = 1 to 100
+//	obj As GameObject = MakeObject()
+//	PaintObject obj, img
+//	PositionObject obj, Rnd(-500, 500), Rnd(-500, 500)
+//next i
+
+beginVec As Vector2 = Vec2(0, 0)
+endVec As Vector2 = Vec2(1, 0)
+z As Integer 
+oldz As Integer
+Print "Entering into main loop..."
+ang As Float
+fricAmt As Float = 1.0
+Repeat
+	ang = WrapAngle(ang + 0.5)
+	//TintObject map, 127+Cos(ang) * 127,  127+Cos(ang+120) * 127,  127+Cos(ang+240) * 127
+	//TintObject guyobj, 127+Cos(ang+120) * 127,  127+Cos(ang+240) * 127,  127+Cos(ang) * 127
+	//TintObject floor, 127+Cos(ang+240) * 127,  127+Cos(ang) * 127,  127+Cos(ang+120) * 127
+	
+	//If KeyDown(17) Then MoveCamera 0, 2  //W
+	//If KeyDown(30) Then MoveCamera -2, 0 //A
+	//If KeyDown(31) Then MoveCamera 0, -2 //S
+	//If KeyDown(32) Then MoveCamera 2, 0  //D
+	
+	CloneCameraPosition guyObj
+	
+	If KeyDown(18) Then TurnCamera -5 //S
+	If KeyDown(19) Then TurnCamera 5  //D
+	
+	If KeyHit(28) Then PositionObject guyobj, 0, 0
+	
+	If UpKey() Then MoveObject guyobj, 2.0*60.0
+	If DownKey() Then MoveObject guyobj, -2.0*60.0
+	If LeftKey() Then TurnObject guyobj, -5
+	If RightKey() Then TurnObject guyobj, 5
+	
+	mouseMapX As Integer = WorldToTileX(map, MouseWX())
+	mouseMapY As Integer = WorldToTileY(map, MouseWY())
+	
+	If MouseDown(1) Then  endVec = Vec2(MouseWX(), MouseWY()) //EditMap map, 0, mouseMapX, mouseMapY, MouseZ()
+	If MouseDown(2) Then  beginVec = Vec2(MouseWX(), MouseWY())
+	oldz = z 
+	z = MouseZ()
+	If oldz <> z Then 
+		fricAmt = fricAmt + Float(z - oldz) * 0.005 
+		if fricAmt > 1.0 Then fircAmt = 1.0
+		If fricAmt < 0.0 Then fricAmt = 0.0
+		guyObj.mFriction = fricAmt
+		oldz = z
+	Endif 
+	//PushTransform 
+	//TranslateTransform -gCameraPosition.x, gCameraPosition.y
+
+	//PushTransform
+	//TranslateTransform 200, 150
+	//RotateTransform (Float(Timer()) / 1000.0) Mod 360.0
+	//DrawImage img, 0, 0
+	//PopTransform 
+	//PopTransform 
+	
+	
+	
+	UpdateGame
+	DrawGame
+	cdat As CollisionData = TilemapCollisionRect(guyobj, map) 
+	If cdat.mCollides Then 
+		//PositionObject guyObj, cdat.mCollisionPoint.x,  cdat.mCollisionPoint.y
+	EndIf 
+	UpdateCameraTransform
+	PushColor 
+	Color 0, 255, 255, 255
+
+	//dir As Vector2 = Sub(endVec, beginVec)
+	//DrawNormalVector Vec2(beginVec.x, -beginVec.y), Vec2(dir.x, -dir.y), 30.0
+	//
+	//Circle Vec2(endVec.x, -endVec.y), 10
+	//
+	//Box TileToWorldX(map, mouseMapX), -TileToWorldY(map, mouseMapY), TileWidth(map), TileHeight(map), False
+	//Color 0, 0, 255, 64
+	//
+	//Box TileToWorldX(map, mouseMapX)+1, -TileToWorldY(map, mouseMapY)+1, TileWidth(map)-2, TileHeight(map)-2, True
+	//PopColor
+	
+	PopTransform
+	
+	Color 255, 255, 0
+	Text 0, 0, "Camera position: " + gCameraPosition.x+", "+gCameraPosition.y
+	Text 0, 12, "ScreenWidth: "+ScreenWidth()
+	Text 0, 24, "ScreenHeight: "+ScreenHeight()
+	Text 0, 36, ObjectX(guyobj) + ", "+ ObjectY(guyobj) + ", "+ObjectZ(guyObj)
+	Text 0, 48, "Mouse position: "+MouseWX()+", "+MouseWY()
+	Text 0, 60, "Mouse position on map: "+WorldToTileX(map, MouseWX())+", "+WorldToTileY(map, MouseWY())
+	Text 0, 72, "FPS: "+FPS()
+	
+	PushColor
+	Color 255, 16, 8
+	SetBlender 0, 1, 1
+	ObjectPick guyObj
+	UpdateCameraTransform
+	Circle PickedX() - 3, -PickedY() - 3, 5
+	PopTransform 	
+	ResetBlender
+	PopColor 
+	
+	If PickedObject() = map Then
+		Text 0, 84, "Press space to shoot."
+		If KeyDown(57) Then
+			EditMap2 map, 2, PickedX() + Cos(guyObj.mRotation), PickedY() - Sin(guyObj.mRotation), 0
+			EditMap2 map, 0, PickedX() + Cos(guyObj.mRotation), PickedY() - Sin(guyObj.mRotation), 137
+			Text 100, 112, GetMap(map, 2, PickedX() + Cos(guyObj.mRotation), PickedY() - Sin(guyObj.mRotation))
+			Text 100, 124, GetMap(map, 0, PickedX() + Cos(guyObj.mRotation), PickedY() - Sin(guyObj.mRotation))
+		Endif
+	EndIf 
+	
+
+	
+	
+	
+	Wait 16
+DrawScreen
+Forever 
+
+Function Circle(p As Vector2, r As Float, fill As Integer = 1) 
+	Circle p.x - r/2, p.y - r/2, r, fill
+EndFunction 
+
+Function Line(a As Vector2, b As Vector2)
+	Line a.x, a.y, b.x, b.y
+EndFunction 
+
+Function DrawNormalVector(origin As Vector2, direction As Vector2, leng As Float)
+	
+	direction = Normalize(direction)
+	
+	Line origin, Add(origin, Mul(direction, leng))
+	Line Add(Add(origin, Mul(direction, leng*0.75)), Mul(Vec2(-direction.y, direction.x), leng*0.15)), Add(origin, Mul(direction, leng))
+	Line Add(Add(origin, Mul(direction, leng*0.75)), Mul(Vec2(-direction.y, direction.x), -leng*0.15)), Add(origin, Mul(direction, leng))
+	
+Endfunction 

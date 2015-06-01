@@ -1,0 +1,787 @@
+
+Type TilemapData
+	Field mData As Integer[,,] //Layer (Back, Over, Hit, Data), (x, y)
+	Field mLayerVisible As Byte[]
+	Field mLayerWidth As Integer
+	Field mLayerHeight As Integer
+	Field mTileHeight As Integer
+	Field mTileWidth As Integer
+	Field mValid As Byte
+	Field mTileAmount As Integer //Tiles per tileset
+	Field mCurrentFrame As Float[]
+	Field mAnimLength As Integer[]
+	Field mAnimTime As Integer[] //Time until next frame to be rendered.
+EndType  
+
+
+Function MakeMap(width As Integer, height As Integer, tileWidth As Integer, tileHeight As Integer) As GameObject 
+	map As GameObject = New (GameObject)
+	map.mVisible = True
+	map.mTint = InitRGBA(255, 255, 255, 255)
+	
+	map.mType = TILEMAP_OBJECT
+	map.mPosition = Vec3(0, 0, 1)
+	map.mRotation = 0.0
+	map.mScale = Vec2(1.0, 1.0)
+	map.mTexture = NULL
+	map.mBoundsSize.x = width * tileWidth
+	map.mBoundsSize.y = height * tileHeight
+
+	
+	map.mMapData = New (TileMapdata)
+	map.mMapData.mLayerWidth = width
+	map.mMapData.mLayerHeight = height
+	map.mMapData.mTileWidth = tileWidth
+	map.mMapData.mTileHeight = tileHeight
+	map.mMapData.mTileAmount = 0
+	
+	Redim map.mMapData.mData[4, width, height]
+	Redim map.mMapData.mLayerVisible[4]
+	
+
+	map.mRenderFunction = RenderTileMapObject(GameObject) 
+	map.mUpdateFunction = UpdateTileMapObject(GameObject)
+	
+	map.mMapData.mLayerVisible[0] = True
+	map.mMapData.mLayerVisible[1] = True 
+	map.mMapData.mLayerVisible[2] = False
+	map.mMapData.mLayerVisible[3] = False 
+	Return map
+EndFunction 
+
+
+
+Function MapCopyBox(sx As Integer, sy As Integer, sw As Integer, sh As Integer, dx As Integer, dy As Integer, src As GameObject, dst As GameObject)
+	If dst = NULL Then dst = src
+	Dim clipboard[4, sw, sh] As Integer
+
+	For i = 0 To 4
+		For y = 0 To sh-1
+			For x = 0 To sw-1
+				
+				dat As Integer = 0
+				If sx+x < MapWidth(src) And sy+y < MapHeight(src)  And sx+x => 0 And sy+y => 0 Then 
+					dat = src.mMapData.mData[i, sx+x, sy+y]
+				EndIf
+				If dx+x < MapWidth(dst) And dy+y < MapHeight(dst)  And dx+x => 0 And dy+y => 0 Then  
+					dst.mMapData.mData[i, dx+x, dy+y] = dat
+				EndIf
+				
+			Next x
+		Next y
+	Next i
+
+EndFunction 
+
+
+Function ResizeMap(map As GameObject, newWidth As Integer, newHeight As Integer, clear As Byte = 1, xoffset As Integer = -1, yoffset As Integer = -1)
+	If map.mMapData = NULL Or map.mType <> TILEMAP_OBJECT Then
+		Print "Object is not a Tilemap!"
+		Return
+	EndIf 
+	If xoffset < 0 And clear = False Then 
+		xoffset = newWidth / 2 -  MapWidth(map)/2
+	EndIf
+	If yoffset < 0 And clear = False Then
+		yoffset = newHeight / 2 -  MapHeight(map)/2
+	Endif 
+
+	
+	Dim oldMap[4, MapWidth(map), MapHeight(map)] As Integer
+	If clear = False Then 
+		For i = 0 To 3 
+			For y = 0 To MapHeight(map)-1
+				For x = 0 To MapWidth(map)-1
+					oldMap[i, x, y] = map.mMapData.mData[i, x, y]
+				Next x
+			Next y
+		Next i
+	EndIf 
+	ReDim map.mMapData.mData[4, newWidth, newHeight]
+	
+	If clear = False Then 
+	For i = 0 To 3 
+		For y = 0 To MapHeight(map)-1
+			For x = 0 To MapWidth(map)-1
+				If x+xoffset < newWidth And y+yoffset < newHeight And x+xoffset => 0 And y+yoffset => 0 Then 
+					map.mMapData.mData[i, x + xoffset, y + yoffset] = oldMap[i, x, y]
+				Endif 
+			Next x
+		Next y
+	Next i
+	EndIf 
+	map.mMapData.mLayerWidth = newWidth
+	map.mMapData.mLayerHeight = newHeight
+	map.mBoundsSize.x = newWidth * TileWidth(map)
+	map.mBoundsSize.y = newWidth * TileHeight(map)
+EndFunction 
+
+
+Function LoadMap(path As String Rem, tileset As String = "" EndRem) As GameObject
+
+	tilemap As GameObject = New(GameObject)
+	tilemap.mMapData = New(TileMapData) 
+	tilemap.mVisible = True 
+	tilemap.mTint = InitRGBA(255, 255, 255, 255)
+	tilemap.mPosition = Vec3(0.0, 0.0, 1.0)
+	tilemap.mRotation = 0.0
+	tilemap.mScale = Vec2(1.0, 1.0)
+	Rem If tileset <> "" Then tilemap.mTexture = LoadImage(tileset) : tilemap.mSelfLoadedTexture = True EndRem
+	tilemap.mType = TILEMAP_OBJECT
+	tilemap.mMapData.mValid = False 
+	tilemap.mRenderFunction = RenderTileMapObject(GameObject) 
+	tilemap.mUpdateFunction = UpdateTileMapObject(GameObject)
+	
+	Redim tilemap.mMapData.mLayerVisible[4]
+
+	For i = 0 To 1
+		tilemap.mMapData.mLayerVisible[i] = True
+		tilemap.mMapData.mLayerVisible[2+i] = False 
+	Next i
+	
+	
+	in As File = OpenToRead(path)
+	If in = NULL Then 
+		Print "Cannot open file: "+path
+		Return tilemap
+	Endif 
+
+	magic As Integer = 0
+	
+	magic = ReadInt(in)
+	If magic <> $8B0DC028 Then 
+		Print "Invalid magic numbers @ Stage 1!"
+		CloseFile in
+		Return tilemap
+	Endif 
+	
+	version As Float = ReadFloat(in)
+	If Not(version => 1.0 And version =< 2.0) Then  
+		Print "Invalid version! Version was: "+version
+		CloseFile in
+		Return tilemap
+	EndIf 
+	
+	SeekFile in, 820 '820 //(820 + 520 = 1340) //Hypätään 820 tavua Eteenpäin tiedostossa.
+	
+	TileAmt As Integer = ReadInt(in) //Luetaan tiedostosta, monta tileä on tilesetissä.
+	
+	Redim tilemap.mMapData.mAnimLength[TileAmt]
+	Redim tilemap.mMapData.mAnimTime[TileAmt]
+	Redim tilemap.mMapData.mCurrentFrame[TileAmt]
+
+	If TileAmt =< 0 Then Print "Can't load map: "+path+"! It doesn't contain any tiles!"
+	
+	tilemap.mMapData.mTileAmount = TileAmt
+	
+	tilemap.mMapData.mTileWidth = ReadInt(in) //Luetaan tilen leveys tiedostosta.
+	tilemap.mMapData.mTileHeight = ReadInt(in) //Luetaan tilen korkeus tiedostosta.
+	
+	If tilemap.mMapData.mTileWidth*tilemap.mMapData.mTileHeight =< 0 Then 
+		Print "Can't load map: "+path+"! Tile size is too small!"
+		CloseFile in
+		Return tilemap
+	Endif 
+	
+	tilemap.mMapData.mLayerWidth = ReadInt(in) //Luetaan maailman  leveys _tileinä_ tiedostosta. 
+	tilemap.mMapData.mLayerHeight = ReadInt(in) //Luetaan maailman Korkeus _tileinä_ tiedostosta.
+	
+	tilemap.mBoundsSize.x = tilemap.mMapData.mLayerWidth * tilemap.mMapData.mTileWidth
+	tilemap.mBoundsSize.y = tilemap.mMapData.mLayerHeight * tilemap.mMapData.mTileHeight
+	
+	If tilemap.mMapData.mLayerWidth*tilemap.mMapData.mLayerHeight =< 0 Then 
+		Print "Can't load map: "+path+"! World size is too small!" 
+		CloseFile in
+		Return tilemap
+	EndIf 
+	
+	
+	
+	ReDim tilemap.mMapData.mData[4, tilemap.mMapData.mLayerWidth, tilemap.mMapData.mLayerHeight]
+	Print "Tilemap size in tiles: " + tilemap.mMapData.mLayerWidth +", "+ tilemap.mMapData.mLayerHeight
+
+	
+	magic = ReadInt(in)
+	If magic <> $A60C2DFE Then 
+		Print "Invalid magic numbers @ Stage 2!"
+		Print "Magic numbers were: "+Hex(magic)
+		CloseFile in
+		Return tilemap
+	EndIf 
+	
+	For y = 0 To tilemap.mMapData.mLayerHeight - 1
+		For x = 0 To tilemap.mMapData.mLayerWidth - 1
+			tilemap.mMapData.mData[0, x, y] = ReadInt(in)
+		Next x    
+	Next y
+	Print "Back layer read."
+
+	magic = ReadInt(in)
+	If magic <> $A50B2CFD Then 
+		Print "Invalid magic numbers @ Stage 3!"
+		Print "Magic numbers were: "+Hex(magic)
+		CloseFile in
+		Return tilemap
+	EndIf 
+	
+	For y = 0 To tilemap.mMapData.mLayerHeight - 1
+		For x = 0 To tilemap.mMapData.mLayerWidth - 1
+			tilemap.mMapData.mData[2, x, y] = ReadInt(in)
+		Next x    
+	Next y
+	Print "Hit layer read."
+
+	magic = ReadInt(in)
+	If magic <> $A40A2BFC Then 
+		Print "Invalid magic numbers @ Stage 4!"
+		Print "Magic numbers were: "+Hex(magic)
+		CloseFile in
+		Return tilemap
+	EndIf 
+	
+	For y = 0 To tilemap.mMapData.mLayerHeight - 1
+		For x = 0 To tilemap.mMapData.mLayerWidth - 1
+			tilemap.mMapData.mData[1, x, y] = ReadInt(in)
+		Next x    
+	Next y 
+	Print "Over layer read."
+
+	magic = ReadInt(in)
+	If magic <> $A3092AFB Then 
+		Print "Invalid magic numbers @ Stage 5!"
+		Print "Magic numbers were: "+Hex(magic)
+		CloseFile in
+		Return tilemap
+	EndIf 
+	
+	For y = 0 To tilemap.mMapData.mLayerHeight - 1
+		For x = 0 To tilemap.mMapData.mLayerWidth - 1
+			tilemap.mMapData.mData[3, x, y] = ReadInt(in)
+		Next x    
+	Next y 
+	Print "Data layer read."
+
+	magic = ReadInt(in)
+	If magic <> $A20829FA Then 
+		Print "Invalid magic numbers @ Stage 6!"
+		Print "Magic numbers were: "+Hex(magic)
+		CloseFile in
+		Return tilemap
+	EndIf 
+
+
+	For i = 0 To tilemap.mMapData.mTileAmount - 1
+		tilemap.mMapData.mAnimLength[i] = ReadInt(in)
+		tilemap.mMapData.mAnimTime[i] = ReadInt(in)
+	Next i
+
+
+	
+	CloseFile in
+	
+	tilemap.mMapData.mValid = True
+	Return tilemap
+End Function 
+
+
+
+Function SetMap(map As GameObject, showBackGround As Integer, showForeGround As Integer = 1, showHitlayer As Integer = 0, showDataLayer As Integer = 0)
+	map.mMapData.mLayerVisible[0] = showBackGround
+	map.mMapData.mLayerVisible[1] = showForeGround
+	map.mMapData.mLayerVisible[2] = showHitlayer
+	map.mMapData.mLayerVisible[3] = showDataLayer
+EndFunction 
+
+
+Function EditMap(map As GameObject, layer As Integer, x As Integer, y As Integer, newTile As Integer) 
+	If map.mMapData = NULL Or map.mType <> TILEMAP_OBJECT Then
+		Print "Given mapect is not a tilemap!"
+		Return
+	Endif 
+	If x < 0 Or x> map.mMapData.mLayerWidth Or y < 0 Or y > map.mMapData.mLayerHeight Then  
+		Return
+	Endif
+	map.mMapData.mData[layer, x, y] = newTile 
+EndFunction 
+
+Function EditMap2(map As GameObject, layer As Integer, x As Float, y As Float, newTile As Integer) 
+	EditMap map, layer, WorldToTileX(map, x), WorldToTileY(map, y), newTile 
+EndFunction 
+
+Function SetTile(map As GameObject, tileindex As Integer, leng As Integer, time As Integer) 
+	map.mMapData.mAnimLength[tileIndex] = leng
+	map.mMapData.mAnimTime[tileIndex] = time 
+EndFunction 
+
+Function TileCurrentFrame(map As GameObject, tileIndex) As Float
+	Return map.mMapData.mCurrentFrame[tileIndex]
+EndFunction
+
+Function TileAnimLength(map As GameObject, tileIndex) As Integer
+	Return map.mMapData.mAnimLength[tileIndex]
+EndFunction
+
+Function TileAnimTime(map As GameObject, tileIndex) As Integer
+	Return map.mMapData.mAnimTime[tileIndex]
+EndFunction
+
+Function OutOfMapBounds(map As GameObject, x As Integer, y As Integer) As Byte
+	If x < 0 Or x > MapWidth(map) Or y < 0 Or y > MapHeight(map) Then Return True
+	Return False 
+EndFunction 
+
+
+Function MapWidth(map As GameObject) As Integer
+	Return map.mMapData.mLayerWidth
+EndFunction 
+
+Function MapHeight(map As GameObject) As Integer
+	Return map.mMapData.mLayerHeight
+EndFunction 
+
+Function TileWidth(map As GameObject) As Integer
+	Return map.mMapData.mTileWidth
+EndFunction 
+
+Function TileHeight(map As GameObject) As Integer
+	Return map.mMapData.mTileHeight
+EndFunction 
+	
+Function WorldToMapX(map As GameObject, x As Float) As Float 
+	mapxToX As Float = x - (map.mPosition.x - (map.mBoundsSize.x / 2))
+	Return mapxToX
+EndFunction 
+
+Function WorldToMapY(map As GameObject, y As Float) As Float 
+	mapyToY As Float = (map.mPosition.y + map.mBoundsSize.y / 2) - y
+	Return mapyToY
+EndFunction 
+
+Function MapToWorldX(map As GameObject, x As Integer) As Float 
+	Return map.mPosition.x - (map.mBoundsSize.x / 2) + x
+EndFunction 
+
+Function MapToWorldY(map As GameObject, y As Integer) As Float 
+	Return map.mPosition.y + (map.mBoundsSize.y / 2) - y
+EndFunction 
+
+Function MapToTileX(map As GameObject, x As Float) As Integer
+	Return x / TileWidth(map)
+EndFunction 
+
+Function MapToTileY(map As GameObject, y As Float) As Integer
+	Return y / TileHeight(map)
+EndFunction 
+
+Function TileToWorldX(map As GameObject, x As Integer) As Float 
+	Return MapToWorldX(map, x * TileWidth(map))
+EndFunction 
+
+Function TileToWorldY(map As GameObject, y As Integer) As Float 
+	Return MapToWorldY(map, y * TileHeight(map))
+EndFunction 
+
+
+Function WorldToTileX(map As GameObject, x As Float) As Integer 
+	Return RoundDown(WorldToMapX(map, x) / TileWidth(map))
+EndFunction 
+
+Function WorldToTileY(map As GameObject, y As Float) As Integer 
+	Return RoundDown(WorldToMapY(map, y) / TileHeight(map))
+EndFunction 
+
+Function WorldToMap(map As GameObject, vec As Vector2) As Vector2
+	Return Vec2(WorldToMapX(map, vec.x), WorldToMapY(map, vec.y))
+EndFunction 
+
+Function MapToWorld(map As GameObject, vec As Vector2) As Vector2
+	Return Vec2(MapToWorldX(map, vec.x), MapToWorldY(map, vec.y))
+EndFunction 
+
+Function GetMap(map As GameObject, layer As Integer, x As Float, y As Float) As Integer
+	tileX As Integer = WorldToTileX(map, x)
+	tileY As Integer = WorldToTileY(map, y)
+	Return GetMap2(map, layer, tileX, tileY)
+EndFunction 
+
+Function GetMap3(map As GameObject, layer As Integer, x As Float, y As Float) As Integer 
+	Return GetMap2(map, layer, MapToTileX(map, x), MapToTileY(map, y))
+EndFunction 
+
+
+Function GetMap2(map As GameObject, layer As Integer, tilex As Integer, tiley As Integer) As Integer
+	If map.mMapData = NULL Or map.mType <> TILEMAP_OBJECT Then
+		Print "Given object is not a tilemap!"
+		Return 0
+	Endif 
+	If OutOfMapBounds(map, tileX, tileY) Then  
+		Return 0
+	Endif
+	If layer = 0 Or layer = 1 Then 
+		Return map.mMapData.mData[layer, tilex, tiley] - 1
+	Else 
+		Return map.mMapData.mData[layer, tilex, tiley]
+	Endif 
+	Return 0
+EndFunction
+
+Function RenderTileLayer(map As GameObject, layer As Integer, renderStyle As Integer = 0) //Layer id, layer style (0 = images, 1 = boxes, 2 = numbers)
+	UpdateCameraTransform
+	UpdateObjectTransform map
+
+	Select renderStyle
+	Case 0
+		PushColor 
+		Color map.mTint
+	Case 1
+		PushColor 
+		Color 0, 144, 196
+	Case 2
+		PushColor 
+		Color 196, 144, 0
+	EndSelect
+	
+	screenSize As Vector2 = Vec2(ScreenWidth(),  ScreenHeight())
+	screenSize = Rotate(screenSize, gCameraRotation)
+	size = Max(Abs(screenSize.x), Abs(screenSize.y))
+	
+	areaTop As Float = gCameraPosition.y + size / 2
+	areaBottom As Float = gCameraPosition.y - size / 2
+	
+	areaLeft As Float = gCameraPosition.x - size / 2
+	areaRight As Float = gCameraPosition.x + size / 2
+    
+	sizeX As Float = map.mMapData.mTileWidth
+	sizeY As Float = map.mMapData.mTileHeight
+	
+	x As Float = map.mPosition.x
+	y As Float = map.mPosition.y
+    
+	If map.mMapData.mLayerWidth Mod 2 Then 
+		x = x + sizeX * 0.5
+	Endif 
+    
+	If map.mMapData.mLayerHeight Mod 2 Then 
+		y = y - sizeY * 0.5
+	Endif 
+	
+	if (x > areaLeft) Then 
+		While (x > areaLeft) 
+			x = x - sizeX
+		Wend
+	else
+		While (x + sizeX < areaLeft) 
+			x = x + sizeX
+		Wend
+	Endif 
+    
+	if (y > areaBottom) Then 
+		While (y > areaBottom) 
+			y = y - sizeY
+		Wend
+	Else
+		While y + sizeY < areaBottom
+			y = y + sizeY
+		Wend
+	Endif 
+    
+	While x - sizeX < areaRight
+		iterY As Float = y
+		While iterY - sizeY < areaTop
+
+			testX As Integer = WorldToTileX(map, x)
+			testY As Integer = WorldToTileY(map, itery)
+			If testX => 0 And testY => 0 And testX < map.mMapData.mLayerWidth And testY < map.mMapData.mLayerHeight Then 
+				tileId As Integer = GetMap2(map, layer, testX, testY)
+	
+				Select renderStyle
+				Case 0
+					If tileID > 0 Then 
+						anim As Integer = 0
+						If map.mMapData.mAnimLength[tileId] Then anim = Int(map.mMapData.mCurrentFrame[tileId])
+						DrawFrame map, x, -iterY, tileID + anim
+						//Text x, -iterY, map.mMapData.mCurrentFrame[tileId]
+					EndIf 
+				Case 1
+					If tileId > 0 Then 
+						Box x, -iterY, map.mMapData.mTileWidth, map.mMapData.mTileHeight, 0
+					Endif 
+				Case 2
+					anim As Integer = 0
+					If map.mMapData.mTileAmount <> 0 Then anim = Int(map.mMapData.mCurrentFrame[tileId])
+					Text x, - iterY, tileId + anim
+				EndSelect 
+
+			Endif 
+    
+			iterY = iterY + sizeY
+		Wend
+		x = x + sizeX
+	Wend 
+	
+	PopColor 
+
+	PopTransform
+	PopTransform
+EndFunction 
+
+
+
+
+Function RenderTileMapObject(map As GameObject) 
+	If map.mMapData.mLayerVisible[0] Then RenderTileLayer map, 0
+EndFunction 
+
+Function UpdateTileMapObject(map As GameObject) 
+	For i = 0 To map.mMapData.mTileAmount - 1 
+		If map.mMapData.mCurrentFrame[i] < map.mMapData.mAnimLength[i] Then 
+			map.mMapData.mCurrentFrame[i] = map.mMapData.mCurrentFrame[i] + (gEngineDeltaTime / Float(map.mMapData.mAnimTime[i]))
+		Else 
+			map.mMapData.mCurrentFrame[i] = 0.0
+		Endif 
+	Next i
+
+EndFunction 
+
+Function IsMap(obj As GameObject) As Byte
+	Return (obj.mType = TILEMAP_OBJECT Or obj.mMapData <> NULL)
+EndFunction 
+
+
+Function DrawFrame(map As GameObject, x As Float, y As Float, tileID As Integer)
+	
+	framesPerRow As Integer = ImageWidth(map.mTexture) / map.mMapData.mTileWidth
+	framesPerCol As Integer = ImageWidth(map.mTexture) / map.mMapData.mTileHeight
+	
+	tileSrcX As Integer = (tileID Mod framesPerRow) * map.mMapData.mTileWidth
+	tileSrcY As Integer = (tileID / framesPerRow)  * map.mMapData.mTileHeight
+	If map.mTexture <> NULL Then 
+		DrawTintedImageBox map.mTexture, x, y, tileSrcX, tileSrcY, map.mMapData.mTileWidth, map.mMapData.mTileHeight
+	Endif 
+EndFunction 
+
+
+Function TilemapCollisionRect(obj As GameObject, map As GameObject) As CollisionData
+
+		output As CollisionData 
+		output.mCollides = False 
+		If IsMap(map) = False Then 
+			Print "TilemapCollisionRect: Given map parameter is not a map!"
+			Return output
+		Endif 
+
+		Dim collided[4] As Byte 
+       
+        	objW As Float = obj.mBoundsSize.x
+        	objH As Float = obj.mBoundsSize.y
+       
+        	objX As Float = obj.mPosition.x
+        	objY As Float = obj.mPosition.y
+       
+        	chckTilesX As Integer = RoundUp(objW / TileWidth(map))
+        	chckTilesY As Integer = RoundUp(objH / TileHeight(map))
+       	
+		If chckTilesX <= 0 Then chckTilesX = 1
+        	If chckTilesY <= 0 Then chckTilesY = 1
+       
+       	 startTileX As Integer = WorldToTileX(map, objX) - chckTilesX
+        	startTileY As Integer = WorldToTileY(map, objY) - chckTilesY
+
+		x As Float
+		y As Float
+		
+		output.mCollisionPoint.x = objX
+		output.mCollisionPoint.y = objY
+		
+		PushColor 
+		UpdateCameraTransform
+        	For tx = startTileX To startTileX + chckTilesX*2
+			For ty = startTileY To startTileY + chckTilesY*2
+				Color 255, 0, 0
+				If GetMap2(map, 2, tx, ty) Then
+					x = TileToWorldX(map, tx)
+					y = TileToWorldY(map, ty)
+					If BoxOverlap(objX - objW, obj.mSafePosition.y + objH, objW*2, objH*2, x, y, TileWidth(map), TileHeight(map)) Then
+						objX = obj.mSafePosition.x
+						If tx < startTileX + chckTilesX And collided[3] = False Then
+								collided[3] = True
+								objX = x + TileWidth(map) + objW
+								Print "left"
+						ElseIf tx > startTileX + chckTilesX And collided[1] = False Then
+								collided[1] = True
+								objX = x - objW
+								Print "right"
+						EndIf
+						UpdateCameraTransform
+						Color 0, 255, 128
+						Box x, -y, TileWidth(map), TileHeight(map), 0
+						PopTransform
+						output.mCollides = True
+					EndIf
+				EndIf
+			Next ty
+        Next tx
+       
+	    Color 255, 0, 0
+        For tx = startTileX To startTileX + chckTilesX*2
+			For ty = startTileY To startTileY + chckTilesY*2
+				Color 255, 0, 0
+				If GetMap2(map, 2, tx, ty) Then
+					x = TileToWorldX(map, tx)
+					y = TileToWorldY(map, ty)
+					If BoxOverlap(objX - objW, objY + objH, objW*2, objH*2, x, y, TileWidth(map), TileHeight(map)) Then
+						objY = obj.mSafePosition.y
+					   
+						If ty < startTileY + chckTilesY And collided[0] = False Then
+								collided[0] = True
+								objY = y - TileHeight(map) - objH - 1
+								Print "top"
+        
+						ElseIf ty > startTileY + chckTilesY And collided[2] = False Then
+								collided[2] = True
+								objY = y + (objH - 1)
+								Print "bottom"
+						EndIf
+						
+						Color 0, 255, 128
+						Box x, -y, TileWidth(map), TileHeight(map), 0
+						
+						output.mCollides = True
+					EndIf
+				EndIf
+			Next ty
+		Next tx	
+		PopColor 
+		PopTransform
+
+		obj.mSafePosition.x = objX
+		obj.mSafePosition.y = objY
+		
+		obj.mPosition = obj.mSafePosition
+        	Return output
+EndFunction
+
+
+Function ObjectSight(map As GameObject, obj1 As GameObject, obj2 As GameObject) As Integer
+	output As RayCastData = MapCastRay(map, Vec2(obj1.mPosition.x, obj1.mPosition.y), Vec2(obj2.mPosition.x, obj2.mPosition.y))
+	Return output.mSuccess 
+EndFunction 
+
+Function MapRayCast(fromobj As GameObject, toobj As GameObject) As RayCastData 
+	Return MapCastRay(toObj, Vec2(fromObj.mPosition.x, fromObj.mPosition.y), Add(Vec2(fromObj.mPosition.x, fromObj.mPosition.y), Mul(Vec2(Cos(fromObj.mRotation), -Sin(fromObj.mRotation)), ObjectSizeX(toObj) * ObjectSizeY(toObj))))
+EndFunction 
+
+
+Function MapCastRay(map As GameObject, startPoint As Vector2, endPoint As Vector2) As RayCastData 
+
+	output As RayCastData
+	If IsMap(map) = False Then 
+		output.mSuccess = 0
+		output.mPickPoint = Vec2(0.0, 0.0)
+		output.mObject = NULL
+		Return output 
+	EndIf 
+
+    	x1 As Float = WorldToMapX(map, startPoint.x) / TileWidth(map)
+    	y1 As Float = WorldToMapY(map, startPoint.y) / TileHeight(map)
+ 	x2 As Float = WorldToMapX(map, endPoint.x) / TileWidth(map)
+    	y2 As Float = WorldToMapY(map, endPoint.y) / TileHeight(map)
+
+    	If RoundDown(x1) = RoundDown(x2) And RoundDown(y1) = RoundDown(y2) Then
+		output.mSuccess = 0
+		output.mPickPoint = endPoint
+        	Return output 
+    	EndIf
+
+	stepX As Float
+	stapY As Float 
+   
+	If x2 >= x1 Then stepX = 1 Else stepX = -1
+    	If y2 >= y1 Then stepY = 1 Else stepY = -1
+
+   	rayDirX As Float = x2 - x1
+    	rayDirY As Float = y2 - y1
+
+    	ratioX As Float = rayDirX / rayDirY
+    	ratioY As Float = rayDirY / rayDirX
+
+    	deltaY As Float = x2 - x1
+    	deltaX As Float = y2 - y1
+
+    	deltaX = Abs(deltaX)
+    	deltaY = Abs(deltaY)
+
+    	testX As Integer = RoundDown(x1)
+    	testY As Integer = RoundDown(y1)
+
+	
+	maxX As Float
+	maxY As Float
+	
+    If stepX > 0 Then
+        maxX = deltaX * (1.0 - (x1 Mod 1))
+    Else
+        maxX = deltaX * (x1 Mod 1)
+    EndIf
+    If stepY > 0 Then
+        maxY = deltaY * (1.0 - (y1 Mod 1))
+    Else
+        maxY = deltaY * (y1 Mod 1)
+    EndIf
+
+    endTileX As Integer = RoundDown(x2)
+    endTileY As Integer = RoundDown(y2)
+
+    hit As Integer = False
+    colX As Float = 0.0
+    colY As Float = 0.0
+
+    While (testX <> endTileX Or testY <> endTileY)
+        If maxX < maxY Then
+            maxX = maxX + deltaX
+            testX = testX + stepX
+
+            If testX >= 0 And testX <= MapWidth(map)-1 Then
+                hit = GetMap2(map, 2, testX, testY)
+            Else
+                hit = 1
+            EndIf
+            If hit Then
+                colX = testX
+                If stepX < 0 Then colX = colX + 1.0
+                colY = y1 + ratioY * (colX - x1)
+                colX = MapToWorldX(map, colX * TileWidth(map))
+                colY = MapToWorldY(map, colY * TileHeight(map))
+
+				output.mSuccess = True
+				output.mPickPoint = Vec2(colX, colY)
+				output.mObject = map
+                Return output
+            EndIf
+        Else
+            maxY = maxY + deltaY
+            testY = testY + stepY
+
+            If testY >= 0 And testY <= MapHeight(map)-1 Then
+                hit = GetMap2(map, 2, testX, testY)
+            Else
+                hit = 1
+            EndIf
+            If hit Then
+                colY = testY
+                If stepY < 0 Then colY = colY + 1.0
+                colX = x1 + ratioX * (colY - y1)
+                colX = MapToWorldX(map, colX * TileWidth(map))
+                colY = MapToWorldY(map, colY * TileHeight(map)) 
+				output.mSuccess = True
+				output.mObject = map
+				output.mPickPoint = Vec2(colX, colY)
+
+                Return output
+            EndIf
+        EndIf
+    	Wend
+	output.mSuccess = False
+	output.mPickPoint = endPoint
+	Return output
+EndFunction

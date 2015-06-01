@@ -1,0 +1,96 @@
+
+Global gCameraPosition As Vector2 = Vec2(0, 0)
+Global gCameraZoom As Float = 1.0 
+Global gCameraRotation As Float = 0.0
+
+
+Function PositionCamera(x As Float, y As Float)
+	gCameraPosition = Vec2(x, y)
+End Function 
+
+Function PositionCamera(pos As Vector2)
+	gCameraPosition = pos
+End Function 
+
+Function MoveCamera(x As Float, y As Float = 0.0)
+	gCameraPosition = Add(gCameraPosition, Rotate(Vec2(x, y), gCameraRotation))
+End Function 
+
+Function RotateCamera(ang As Float)
+	gCameraRotation = WrapAngle(ang)
+EndFunction 
+
+Function TurnCamera(ang As Float)
+	gCameraRotation = gCameraRotation + ang
+EndFunction 
+
+Function TranslateCamera(x As Float, y As Float = 0.0)
+	gCameraPosition = Add(gCameraPosition, Vec2(x, y))
+End Function 
+
+Function CloneCameraPosition(obj As GameObject)
+	PositionCamera obj.mPosition.x, obj.mPosition.y
+EndFunction
+
+Function MouseWX() As Float
+	Return ScreenToWorldX(MouseX(), MouseY())
+EndFunction 
+
+Function MouseWY() As Float
+	Return ScreenToWorldY(MouseX(), MouseY())
+EndFunction 
+
+Function ScreenToWorldX(x As Float, y As Float) As Float 
+	UpdateCameraTransform
+	InvertTransform
+	x = TransformedX(x, y)
+	PopTransform
+	Return x
+EndFunction 
+
+Function ScreenToWorldY(x As Float, y As Float) As Float 
+	UpdateCameraTransform
+	InvertTransform
+	y = -TransformedY(x, y)
+	PopTransform
+	Return y
+EndFunction 
+
+Function WorldToScreenX(x As Float, y As Float) As Float 
+	UpdateCameraTransform
+	x = TransformedX(x, y)
+	PopTransform
+	Return x
+EndFunction 
+
+Function WorldToScreenY(x As Float, y As Float) As Float 
+	UpdateCameraTransform
+	y = -TransformedY(x, y)
+	PopTransform
+	Return y
+EndFunction 
+
+Function WorldToScreen(v As Vector2) As Vector2
+	Return Vec2(WorldToScreenX(v.x, v.y), WorldToScreenY(v.x, v.y))
+EndFunction 
+
+Function ScreenToWorld(v As Vector2) As Vector2
+	Return Vec2(ScreenToWorldX(v.x, v.y), ScreenToWorldY(v.x, v.y))
+EndFunction 
+
+Function WorldToScreen(v As Vector3) As Vector3
+	Return Vec3(WorldToScreenX(v.x, v.y), WorldToScreenY(v.x, v.y), v.z)
+EndFunction 
+
+Function ScreenToWorld(v As Vector3) As Vector3
+	Return Vec3(ScreenToWorldX(v.x, v.y), ScreenToWorldY(v.x, v.y), v.z)
+EndFunction 
+
+
+Function UpdateCameraTransform()
+	PushTransform
+	ResetTransform
+	TranslateTransform ScreenWidth()/2 - gCameraPosition.x, ScreenHeight()/2 + gCameraPosition.y
+	ScaleTransform 1, 1
+	RotateTransform -gCameraRotation
+End Function 

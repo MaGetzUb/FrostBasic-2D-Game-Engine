@@ -1,0 +1,584 @@
+
+
+
+Include "../AdvancedMaths.cb"
+Include "../RGBA.cb"
+Include "Camera.cb"
+Include "TilemapFunctions.cb"
+
+Const NULL_OBJECT = 0
+Const BASIC_OBJECT As Integer = 1
+Const FLOOR_OBJECT AS Integer = 2
+Const TILEMAP_OBJECT As Integer = 3
+
+Const MapBack As Integer = 0
+Const MapHit As Integer = 1
+Const MapOver As Integer = 2
+Const MapData As Integer = 3
+
+Global gRaycastData As RayCastData
+Global gPickedAngle As Float 
+Global gEngineDeltaTime As Float 
+Global gEngineTime As Float
+
+Struct RaycastData
+	Field mSuccess As Byte
+	Field mPickPoint As Vector2 
+	Field mObject As GameObject 
+EndStruct
+
+Type PickableObject 
+	Field mObject As GameObject
+	Field mRaycastFunction As Function(GameObject, GameObject) As RaycastData
+	Field mPickStyle As Byte 
+EndType 
+
+
+Type GameObject
+	Field mType
+	Field mOldPosition As Vector3
+	Field mPosition As Vector3
+	Field mSafePosition As Vector3
+	Field mFriction As Float 
+	Field mAcceleration As Vector3
+	Field mConstantVel As Vector3
+	Field mRotation As Float 
+	Field mScale As Vector2 
+	Field mTexture As Image
+	Field mSelfLoadedTexture As Byte
+	Field mBoundsSize As Vector2
+	Field mHotSpot As Vector2 
+	Field mVisible As Byte 
+	Field mMapData As TilemapData
+	Field mPickData As PickableObject 
+	Field mTint As RGBA
+	Field mRenderFunction As Function(GameObject)
+	Field mUpdateFunction As Function(GameObject) 
+	Field mCollisionList As Collision[]
+	Field mCollisionAmount As Integer 
+EndType 
+
+
+Struct CollisionData
+	Field mCollides As Byte
+	Field mCollisionPoint As Vector3
+	Field mCollisionNormal As Vector3
+	Field mObject As GameObject
+EndStruct
+
+Type Collision
+	Field mCollision As CollisionData
+EndType
+
+
+Function MakeObject() As GameObject 
+	obj As GameObject = New (GameObject)
+	obj.mType = BASIC_OBJECT
+	obj.mPosition = Vec3(0, 0, 1)
+	obj.mOldPosition = obj.mPosition
+	obj.mRotation = 0.0
+	obj.mScale = Vec2(1.0, 1.0)
+	obj.mFriction = 0.0
+	obj.mTexture = NULL
+	obj.mVisible = True	
+	obj.mTint = InitRGBA(255, 255, 255, 255)
+	obj.mRenderFunction = RenderBasicObject(GameObject)
+	obj.mUpdateFunction = UpdateBasicObject(GameObject)
+	Return obj
+End Function 
+
+
+Function DeleteObject(obj As GameObject)
+//	If obj.mMapData Then Delete obj.mMapData
+//	If obj.mPickData Then Delete obj.mPickData
+//	Delete obj 
+EndFunction 
+
+
+Function LoadObject(path As String) As GameObject 
+	obj As GameObject = MakeObject()
+	obj.mTexture = LoadImage(path)
+	obj.mSelfLoadedTexture = True
+	obj.mBoundsSize.x = ImageWidth(obj.mTexture) / 2
+	obj.mBoundsSize.y = ImageHeight(obj.mTexture) / 2
+	obj.mHotSpot = obj.mBoundsSize
+	obj.mVisible = True 
+	Return obj
+End Function 
+
+Function ObjectPickable(obj As GameObject, picktype As Integer)
+
+	If obj.mPickData = NULL And pickType > 0 Then
+		obj.mPickData = New(PickableObject)
+		obj.mPickData.mObject = obj
+		obj.mPickData.mPickStyle = pickType
+		If obj.mType = TILEMAP_OBJECT Or obj.mMapData <> NULL Then 
+			obj.mPickData.mRaycastFunction = MapRayCast(GameObject, GameObject) 
+		Else 
+			Select pickType
+			Case 1
+				obj.mPickData.mRaycastFunction = BoxRayCast(GameObject, GameObject) 
+			Case 2
+				obj.mPickData.mRaycastFunction = CircleRayCast(GameObject, GameObject) 
+			EndSelect 
+		Endif 
+	ElseIf obj.mPickData <> NULL And pickType > 0 Then 
+		If obj.mType <> TILEMAP_OBJECT And obj.mMapData = NULL Then 
+			obj.mPickData.mObject = obj
+			obj.mPickData.mPickStyle = pickType
+			Select pickType
+				Case 1
+					obj.mPickData.mRaycastFunction = BoxRayCast(GameObject, GameObject) 
+				Case 2
+					obj.mPickData.mRaycastFunction = CircleRayCast(GameObject, GameObject) 
+			EndSelect 
+		EndIf
+	ElseIf obj.mPickData <> NULL And pickType = 0 Then 
+		Delete obj.mPickData
+	EndIf
+	
+EndFunction 
+
+Function Distance(a As GameObject, b As GameObject) As Float
+	Return Length(Sub(a.mPosition, b.mPosition))
+EndFunction 
+
+Function ObjectImage(obj As GameObject) As Image 
+	Return obj.mTexture
+EndFunction 
+
+
+
+Function ObjectPick(obj As GameObject)
+	maxdist As Float = MaxFloat
+	For picks As PickableObject = Each PickableObject
+		If picks.mObject <> obj Then 
+			rdata As RayCastData = picks.mRaycastFunction(obj, picks.mObject)
+			If rdata.mSuccess Then 
+				dist As Float = Length(Sub(rdata.mPickPoint, Vec2(obj.mPosition.x, obj.mPosition.y)))	
+				If dist < maxdist Then 
+					gRayCastData = rdata
+					gPickedAngle = GetAngle(obj.mPosition.x, -obj.mPosition.y, rdata.mPickPoint.x, -rdata.mPickPoint.y) 
+					maxDist = dist
+				Endif 
+			Endif 
+		Endif 
+	Next picks
+EndFunction 
+
+
+Function PickedObject() As GameObject
+	Return gRayCastData.mObject
+EndFunction 
+
+Function PickedX() As Float
+	Return gRayCastData.mPickPoint.x
+EndFunction
+
+Function PickedY() As Float
+	Return gRayCastData.mPickPoint.y
+EndFUnction 
+
+
+
+Function CloneObject(obj2 As GameObject) As GameObject 
+	obj As GameObject = MakeObject()
+	obj.mTexture = obj2.mTexture
+	obj.mBoundsSize.x = ImageWidth(obj.mTexture) / 2
+	obj.mBoundsSize.y = ImageHeight(obj.mTexture) / 2
+	obj.mHotSpot = obj.mBoundsSize
+	Return obj
+End Function 
+
+
+Function ObjectOrder(obj As GameObject, order As Integer)
+	//If Order > 0 Then 
+	//	Insert obj, First(GameObject)
+	//ElseIf Order < 0
+	//	Insert obj, Last(GameObject)
+	//Endif 
+EndFunction 
+
+
+Function MakeObjectFloor() As GameObject 
+	obj As GameObject = New (GameObject)
+	obj.mType = FLOOR_OBJECT 
+	obj.mPosition = Vec3(0, 0, 1)
+	obj.mOldPosition = obj.mPosition
+	obj.mRotation = 0.0
+	obj.mScale = Vec2(1.0, 1.0)
+	obj.mTexture = NULL
+	obj.mVisible = True 
+	obj.mTint = InitRGBA(255, 255, 255, 255)
+	obj.mRenderFunction = RenderFloorObject(GameObject)
+	obj.mUpdateFunction = UpdateBasicObject(GameObject)
+	Return obj
+EndFunction 
+
+
+Function PaintObject(obj As GameObject, img As Image)
+	
+	If obj.mTexture <> NULL And obj.mSelfLoadedTexture = True Then 
+		obj.mSelfLoadedTexture = False
+	EndIf 
+
+	obj.mTexture = img
+	obj.mHotSpot.x = ImageWidth(img) / 2
+	obj.mHotSpot.y = ImageHeight(img) / 2
+
+	
+	If obj.mType = TILEMAP_OBJECT And obj.mMapData <> NULL Then 
+		If (obj.mMapData.mTileWidth * obj.mMapData.mTileHeight) > 0 Then 
+			TilesPerRow As Integer = ImageWidth(obj.mTexture) / obj.mMapData.mTileWidth
+			TilesPerCol As Integer = ImageHeight(obj.mTexture) / obj.mMapData.mTileHeight
+			tiles As Integer = TilesPerRow * TilesPerCol
+			If tiles <> obj.mMapData.mTileAmount THen 
+				Print "Invalid amount of tiles!"
+			Endif 
+
+		Endif
+	Else 
+		obj.mBoundsSize.x = ImageWidth(img) / 2
+		obj.mBoundsSize.y = ImageHeight(img) / 2
+	Endif 
+
+EndFunction 
+
+Function GhostObject(obj As GameObject, alpha As Float)
+	alpha = Max(0, Min(100, alpha))
+	alpha = alpha / 100.0
+	obj.mTint.a = alpha
+EndFunction 
+
+Function TintObject(obj As GameObject, r As Byte, g As Byte, b As Byte)
+	obj.mTint.r = Float(r)/255.0
+	obj.mTint.g = Float(g)/255.0
+	obj.mTint.b = Float(g)/255.0
+EndFunction
+
+Function TintObject(obj As GameObject, r As Byte, g As Byte, b As Byte, a As Byte)
+	obj.mTint = InitRGBA(r, g, b, a)
+EndFunction 
+
+Function ObjectSizeX(obj As GameObject) As Float
+	Return obj.mBoundsSize.x 
+EndFunction
+
+Function ObjectSizeY(obj As GameObject) As Float 
+	Return obj.mBoundsSize.y
+EndFunction
+
+Function MaskObject(obj As GameObject, r As Integer, g As Integer, b As Integer, a As Integer = 255)
+	MaskImage obj.mTexture, r, g, b, a
+EndFunction 
+
+Function MoveObject(obj As GameObject, x As Float, y As Float = 0.0) 
+	obj.mConstantVel = Vec3(Rotate(Vec2(x, y), -obj.mRotation))
+End Function 
+
+Function TurnObject(obj As GameObject, delta As Float) 
+	obj.mRotation = WrapAngle(obj.mRotation + delta)
+End Function 
+
+Function TranslateObject(obj As GameObject, x As Float, y As Float = 0.0) 
+	obj.mConstantVel = Vec3(x, y, 0)
+End Function
+
+Function RotateObject(obj As GameObject, angle As Float)
+	obj.mRotation = angle
+EndFunction 
+
+Function ObjectX(obj As GameObject) As Float 
+	Return obj.mPosition.x
+EndFunction 
+
+Function ObjectY(obj As GameObject) As Float 
+	Return obj.mPosition.y
+EndFunction 
+
+Function ObjectZ(obj As GameObject) As Float 
+	Return obj.mPosition.z
+EndFunction 
+
+Function ObjectAngle(obj As GameObject) As Float 
+	Return obj.mRotation
+EndFunction 
+
+Function PositionObject(obj As GameObject, x As Float, y As Float, z As Float = 1.0)
+	obj.mPosition = Vec3(x, y, z)
+	obj.mOldPosition = obj.mPosition
+	obj.mSafePosition = obj.mPosition
+End Function 
+
+Function UpdateBasicObject(obj As GameObject)
+
+	prevPos As Vector3 = obj.mPosition
+	diff As Vector3 = Sub(obj.mPosition, obj.mOldPosition)
+	diff = Add(Mul(diff, (1.0 - obj.mFriction)), Mul(obj.mConstantVel, obj.mFriction * gEngineDeltaTime))
+	obj.mPosition = Add(Add(obj.mPosition, diff), Mul(obj.mAcceleration, gEngineDeltaTime*gEngineDeltaTime))
+	obj.mOldPosition = prevPos
+	obj.mAcceleration = Vec3(0, 0, 0)
+	obj.mConstantVel = Vec3(0, 0, 0)
+EndFunction 
+
+
+Function UpdateObjectTransform(obj As GameObject)
+	//BuildTransform obj.mPosition.x / obj.mPosition.z, obj.mPosition.y / obj.mPosition.z, obj.mScale.x, obj.mScale.y, obj.mRotation
+	PushTransform 
+	TranslateTransform obj.mPosition.x, -obj.mPosition.y
+	RotateTransform obj.mRotation
+EndFunction 
+
+Function RenderBasicObject(obj As GameObject)
+	PushColor
+	If obj.mType <> BASIC_OBJECT Then Return
+	UpdateCameraTransform
+	UpdateObjectTransform obj
+	Color obj.mTint
+	If obj.mTexture <> NULL And obj.mVisible = True Then 
+		DrawTintedImage obj.mTexture, -obj.mHotSpot.x, -obj.mHotSpot.y
+	Endif 
+	PopTransform
+	PopTransform
+	PopColor 
+EndFunction 
+
+
+Function RenderFloorObject(obj As GameObject) 
+	If obj.mType <> FLOOR_OBJECT Then Return 
+	UpdateCameraTransform
+	UpdateObjectTransform obj
+	PushColor
+	//m_Target->getTransform().reset();
+
+	screenSize As Vector2 = Vec2(ScreenWidth(),  ScreenHeight())
+	screenSize = Rotate(screenSize, gCameraRotation)
+	size = Max(Abs(screenSize.x), Abs(screenSize.y))
+	
+	areaTop As Float = gCameraPosition.y + size / 2
+	areaBottom As Float = gCameraPosition.y - size / 2
+	
+	areaLeft As Float = gCameraPosition.x - size / 2
+	areaRight As Float = gCameraPosition.x + size / 2
+
+	sizeX As Float = ImageWidth(obj.mTexture)
+	sizeY As Float = ImageHeight(obj.mTexture)
+	
+	x As Float = obj.mPosition.x
+	y As Float = obj.mPosition.y
+
+	if (x > areaLeft) Then 
+		while (x > areaLeft) 
+			x = x - sizeX
+		Wend
+	else
+		while (x + sizeX < areaLeft) 
+			x = x + sizeX
+		Wend
+	Endif 
+
+	if (y > areaBottom) Then 
+		While (y > areaBottom) 
+			y = y - sizeY
+		Wend
+	Else
+		while (y + sizeY < areaBottom) 
+			y = y + sizeY
+		Wend
+	Endif 
+
+	Color obj.mTint
+	
+	While x - sizeX < areaRight
+		iterY As Float = y
+		While iterY - sizeY < areaTop
+			DrawTintedImage obj.mTexture, x, -iterY 
+			iterY = iterY + sizeY
+		Wend
+		x = x + sizeX
+	Wend
+
+	PopColor
+	PopTransform
+	PopTransform
+EndFunction
+
+Rem
+	Field mCurrentFrame As Float[]
+	Field mAnimLength As Integer[]
+	Field mAnimTime As Integer[] 
+EndRem
+Function UpdateGame() 
+	
+	For obj As GameObject = Each GameObject 
+		If  obj.mUpdateFunction <> NULL Then obj.mUpdateFunction(obj)
+	Next obj
+	curTime As Float = Float(Timer())
+	gEngineDeltaTime = (curTime - gEngineTime) / 1000.0
+	gEngineTime = curTime
+EndFunction 
+
+
+Function DrawGame()
+	PushColor 
+	For obj As GameObject = Each GameObject
+		If obj.mRenderFunction <> NULL Then 
+			obj.mRenderFunction(obj)
+		Endif 
+	Next obj
+	For obj As GameObject = Each GameObject
+		If obj.mType = TILEMAP_OBJECT Then 
+			If obj.mMapData.mLayerVisible[1] Then RenderTileLayer obj, 1
+			If obj.mMapData.mLayerVisible[2] Then RenderTileLayer obj, 2, 1
+			If obj.mMapData.mLayerVisible[3] Then RenderTileLayer obj, 3, 2
+		Endif 
+	Next obj
+	PopColor
+EndFunction
+ 
+
+Function BoxRayCast(fromobj As GameObject, toObj As GameObject) As RaycastData
+
+	output As RayCastData
+	output.mSuccess = False 
+	output.mPickPoint = Vec2(0, 0)
+	
+	rectW As Float = toObj.mBoundsSize.x
+	rectH As Float = toObj.mBoundsSize.y
+	rectX As Float = toObj.mPosition.x - rectW
+	rectY As Float = -toObj.mPosition.y + rectH
+
+	lft As Float = rectX
+	top As Float = rectY
+	rght As Float  = rectX + rectW * 2
+	bottom As Float  = rectY - rectH * 2
+
+	startX As Float = fromobj.mPosition.x
+	startY As Float = -fromobj.mPosition.y
+	angle As Float = fromobj.mRotation
+
+	x As Float
+	y As Float
+	k As Float = Tan(angle) 
+	b As Float = startY - k * startX
+
+	if angle > 180 Then 
+		y = top
+		x = (y - b) / k
+		if startY > y And x > lft And x < rght Then
+			output.mPickPoint.x = x
+			output.mPickPoint.y = -y
+			output.mObject = toObj
+			output.mSuccess = True
+			return output
+		EndIf
+	Else 
+		y = bottom
+		x = (y - b) / k
+		if startY < y And x > lft And x < rght Then
+			output.mPickPoint.x = x
+			output.mPickPoint.y = -y
+			output.mObject = toObj
+			output.mSuccess = True
+			return output
+		EndIf
+	EndIf
+
+	if angle < 90 Or angle > 270 Then 
+		x = lft
+		y = k * x + b
+		if startX < x And y > bottom And y < top Then 
+			output.mPickPoint.x = x
+			output.mPickPoint.y = -y
+			output.mObject = toObj
+			output.mSuccess = True
+			return output
+		EndIf
+	Else
+		x = rght
+		y = k * x + b
+		if startX > x And y > bottom And y < top Then 
+			output.mPickPoint.x = x
+			output.mPickPoint.y = -y
+			output.mObject = toObj
+			output.mSuccess = True
+			return output
+		EndIF
+	EndIf
+
+	Return output
+EndFunction  
+
+
+Function CircleRayCast(fromobj As GameObject, toObj As GameObject) As RaycastData
+	output As RayCastData
+	output.mSuccess = False 
+	output.mPickPoint = Vec2(0, 0)
+
+	startX As Float = fromobj.mPosition.x
+	startY As Float = fromobj.mPosition.y
+
+	circleX As Float = toObj.mPosition.x
+	circleY As Float = toObj.mPosition.y
+
+	r As Float = Max(toObj.mBoundsSize.x, toObj.mBoundsSize.y)
+
+
+	cvX As Float = startX - circleX
+	cvY As Float = startY - circleY
+
+	// If ray start point is inside this circle, don't pick this.
+	if ((cvX * cvX + cvY * cvY) < r*r) Then
+		output.mPickPoint.x = startX
+		output.mPickPoint.y = startY
+		return output
+	EndIf 
+	// Ray end point
+	endX As float = startX + Cos(fromobj.mRotation) * 10000000.0
+	endY As float = startY - Sin(fromobj.mRotation) * 10000000.0
+
+	dirX As Float = endX - startX
+	dirY As Float = endY - startY
+
+	
+	a As Float = dirX * dirX + dirY * dirY
+	b As Float = 2 * (dirX * cvX + dirY * cvY)
+	c As Float = (cvX * cvX + cvY * cvY) - r * r
+
+	discriminant As Float = b * b - 4 * a * c
+	If discriminant < 0 Then
+		output.mPickPoint.x = endX
+		output.mPickPoint.y = endY
+		Return output
+	Else
+
+		discriminant = Sqrt(discriminant)
+		t1 As Float = (-b + discriminant) / (2 * a)
+		t2 As Float = (-b - discriminant) / (2 * a)
+
+
+		
+		if t2 >= 0 And t2 <= 1 Then
+			output.mSuccess = True
+			output.mObject = toObj
+			output.mPickPoint.x = startX + t2 * dirX
+			output.mPickPoint.y = startY + t2 * dirY
+			Return output
+		EndIf
+
+		
+		if t1 >= 0 And t1 <= 1 Then
+			output.mSuccess = True
+			output.mObject = toObj
+			output.mPickPoint.x = startX + t1 * dirX
+			output.mPickPoint.y = startY + t1 * dirY
+			Return output
+		Endif
+
+		output.mPickPoint.x = endX
+		output.mPickPoint.y = endY
+		Return output
+	Endif
+	Return output
+EndFunction
+
